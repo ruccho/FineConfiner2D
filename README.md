@@ -31,7 +31,6 @@ Fine Confiner 2D uses [Clipper2](https://github.com/AngusJohnson/Clipper2) (Boos
 1. Add NuGetForUnity to your project (Package Manager → *Add package from git URL*):
    `https://github.com/GlitchEnzo/NuGetForUnity.git?path=/src/NuGetForUnity`
 2. Open **NuGet → Manage NuGet Packages**, search for `Clipper2` and install it (2.0.0 or later).
-   This places `Clipper2Lib.dll` under `Assets/Packages/Clipper2.<version>/lib/netstandard2.0/`.
 
 ### 2. Install Fine Confiner 2D
 

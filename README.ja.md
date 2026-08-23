@@ -33,7 +33,6 @@ Fine Confiner 2D は多角形のオフセット計算に [Clipper2](https://gith
 1. NuGetForUnity をプロジェクトに追加します(Package Manager → *Add package from git URL*):
    `https://github.com/GlitchEnzo/NuGetForUnity.git?path=/src/NuGetForUnity`
 2. **NuGet → Manage NuGet Packages** を開き、`Clipper2` を検索してインストールします(2.0.0 以降)。
-   `Clipper2Lib.dll` が `Assets/Packages/Clipper2.<version>/lib/netstandard2.0/` に配置されます。
 
 ### 2. Fine Confiner 2D をインストールする
 
