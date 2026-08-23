@@ -1,0 +1,17 @@
+{
+    "name": "FineConfiner2D.Cinemachine",
+    "rootNamespace": "FineConfiner2D.Cinemachine",
+    "references": [
+        "FineConfiner2D",
+        "Unity.Cinemachine"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

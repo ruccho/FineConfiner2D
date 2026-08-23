@@ -1,15 +1,23 @@
 {
-    "name": "com.ruccho.fine-confiner-2d",
-    "version": "0.1.0",
-    "displayName": "Fine Confiner 2D",
-    "description": "A smarter alternative to Cinemachine Confiner 2D. Pathfinding delivers flawless camera precision—no clipping, no jumps.",
-    "unity": "6000.3",
-    "unityRelease": "0f1",
-    "dependencies": {
-        "com.unity.cinemachine": "3.1.0"
-    },
-    "author": {
-        "name": "ruccho",
-        "url": "https://ruccho.com"
+  "name": "com.ruccho.fine-confiner-2d",
+  "version": "0.1.0",
+  "displayName": "Fine Confiner 2D",
+  "description": "A smarter alternative to Cinemachine Confiner 2D. Pathfinding delivers flawless camera precision—no clipping, no jumps.",
+  "unity": "6000.3",
+  "unityRelease": "0f1",
+  "dependencies": {
+    "com.unity.cinemachine": "3.1.0",
+    "com.unity.test-framework": "1.6.0"
+  },
+  "author": {
+    "name": "ruccho",
+    "url": "https://ruccho.com"
+  },
+  "samples": [
+    {
+      "displayName": "Basic Sample",
+      "description": "A top-down scene with an L-shaped room and a narrow corridor. Walk around with WASD / arrow keys and watch the camera stay inside the bounds.",
+      "path": "Samples~/BasicSample"
     }
+  ]
 }
