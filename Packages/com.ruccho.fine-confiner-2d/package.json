@@ -1,0 +1,15 @@
+{
+    "name": "com.ruccho.fine-confiner-2d",
+    "version": "0.1.0",
+    "displayName": "Fine Confiner 2D",
+    "description": "A smarter alternative to Cinemachine Confiner 2D. Pathfinding delivers flawless camera precision—no clipping, no jumps.",
+    "unity": "6000.3",
+    "unityRelease": "0f1",
+    "dependencies": {
+        "com.unity.cinemachine": "3.1.0"
+    },
+    "author": {
+        "name": "ruccho",
+        "url": "https://ruccho.com"
+    }
+}
