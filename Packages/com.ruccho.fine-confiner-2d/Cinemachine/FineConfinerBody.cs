@@ -116,9 +116,13 @@ namespace FineConfiner2D.Cinemachine
                 var current = Follower.Position;
 
                 // --- DeadZone: stay put inside the rectangle, otherwise move just enough to reach its edge ---
+                // Applied to the unconfined target before mapping it into the region. Applying it to the mapped
+                // goal instead would keep the camera a dead zone short of the bounds: the mapped goal stops at the
+                // boundary while the target keeps going.
                 var goal = mapped;
                 if (deadZone.enabled)
-                    goal = current + ClampOutside(mapped - current, deadZone.size * HalfWindow);
+                    goal = Follower.Region.MapTarget(
+                        current + ClampOutside(desired - current, deadZone.size * HalfWindow));
 
                 // --- HardLimits: keep the target inside this rectangle. The minimum travel is the amount by
                 // which the overshoot *grew* since the last frame (keep pace with the target), never the

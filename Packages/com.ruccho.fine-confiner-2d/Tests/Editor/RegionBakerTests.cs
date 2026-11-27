@@ -302,6 +302,177 @@ namespace FineConfiner2D.Tests
         }
 
         [Test]
+        public void MapTarget_Rectangle_ClampsAxisWiseNearWallsAndCorners()
+        {
+            // Region of camera centers: [4,16] x [2,8]. Outside it, the camera follows the target along the walls
+            // and reaches the corners, like an axis-wise clamp.
+            var region = RegionBaker.Bake(new[] { Rect(0, 0, 20, 10) }, Window);
+            for (var x = 0.25f; x < 20f; x += 0.5f)
+            for (var y = 0.25f; y < 10f; y += 0.5f)
+            {
+                var t = new Vector2(x, y);
+                var m = region.MapTarget(t);
+                var expected = new Vector2(Mathf.Clamp(x, 4f, 16f), Mathf.Clamp(y, 2f, 8f));
+                Assert.AreEqual(expected.x, m.x, 2e-3f, $"target {t}: mapped to {m}");
+                Assert.AreEqual(expected.y, m.y, 2e-3f, $"target {t}: mapped to {m}");
+            }
+
+            var c = region.MapTarget(new Vector2(6, 1));
+            Assert.AreEqual(6f, c.x, 1e-3f);
+            Assert.AreEqual(2f, c.y, 1e-3f);
+        }
+
+        [Test]
+        public void MapTarget_LShape_FollowsWallsAwayFromReflexCorner()
+        {
+            // Inner (reflex) corner of the bounds at (10,10); the region's reflex corner is at (6,8).
+            var region = RegionBaker.Bake(new[] { Rect(0, 0, 30, 10), Rect(0, 0, 10, 30) }, Window);
+
+            // Far from the reflex corner, the target near the ceiling of the horizontal arm is followed along it
+            var m = region.MapTarget(new Vector2(20, 9.5f));
+            Assert.AreEqual(20f, m.x, 1e-3f);
+            Assert.AreEqual(8f, m.y, 1e-3f);
+
+            // Near the floor at the far end: the convex corner is reached
+            m = region.MapTarget(new Vector2(29, 0.5f));
+            Assert.AreEqual(26f, m.x, 1e-3f);
+            Assert.AreEqual(2f, m.y, 1e-3f);
+        }
+
+        [TestCaseSource(nameof(WellBehavedShapes))]
+        public void MapTarget_IsContinuousAndKeepsTargetOnScreen(Vector2[][] loops)
+        {
+            var region = RegionBaker.Bake(loops, Window);
+            Assert.AreEqual(1, region.IslandCount);
+
+            var min = new Vector2(float.PositiveInfinity, float.PositiveInfinity);
+            var max = new Vector2(float.NegativeInfinity, float.NegativeInfinity);
+            foreach (var loop in loops)
+            foreach (var p in loop)
+            {
+                min = Vector2.Min(min, p);
+                max = Vector2.Max(max, p);
+            }
+
+            const float step = 0.05f;
+            // Scan lines in both directions; consecutive samples inside the bounds must map close to each other
+            for (var pass = 0; pass < 2; pass++)
+            {
+                var lines = pass == 0 ? max.y - min.y : max.x - min.x;
+                var along = pass == 0 ? max.x - min.x : max.y - min.y;
+                for (var l = 0.37f; l < lines; l += 0.9f)
+                {
+                    var hasPrev = false;
+                    var prev = Vector2.zero;
+                    for (var k = 0f; k <= along; k += step)
+                    {
+                        var t = pass == 0 ? new Vector2(min.x + k, min.y + l) : new Vector2(min.x + l, min.y + k);
+                        if (!InsideAny(loops, t))
+                        {
+                            hasPrev = false;
+                            continue;
+                        }
+
+                        var m = region.MapTarget(t);
+                        Assert.IsTrue(region.Contains(m), $"target {t}: {m} outside region");
+                        // Wherever some window inside the bounds shows the target, the mapped camera must show it
+                        if (ScaledChebyshev(t, region.Confine(t), Window) <= 1f)
+                            Assert.LessOrEqual(ScaledChebyshev(t, m, Window), 1f + 1e-3f,
+                                $"target {t}: off screen from {m}");
+                        if (hasPrev)
+                            Assert.Less((m - prev).magnitude, 4f * step + 1e-3f,
+                                $"target {t}: jump from {prev} to {m}");
+                        prev = m;
+                        hasPrev = true;
+                    }
+                }
+            }
+        }
+
+        private static IEnumerable<TestCaseData> WellBehavedShapes()
+        {
+            yield return new TestCaseData(new object[] { new[] { Rect(0, 0, 20, 10) } }).SetName("{m}(Rectangle)");
+            yield return new TestCaseData(new object[] { new[] { Rect(0, 0, 30, 10), Rect(0, 0, 10, 30) } })
+                .SetName("{m}(LShape)");
+            yield return new TestCaseData(new object[] { ConvexWithDiagonals }).SetName("{m}(ConvexWithDiagonals)");
+            yield return new TestCaseData(new object[] { DiagonalReflexCorner }).SetName("{m}(DiagonalReflexCorner)");
+        }
+
+        // Convex, with diagonal edges of several slopes and sharp vertices
+        private static readonly Vector2[][] ConvexWithDiagonals =
+        {
+            new[]
+            {
+                new Vector2(0, 0), new Vector2(40, 0), new Vector2(48, 16), new Vector2(20, 30), new Vector2(-6, 12)
+            }
+        };
+
+        // Reflex corner between a horizontal and a diagonal edge
+        private static readonly Vector2[][] DiagonalReflexCorner =
+        {
+            new[]
+            {
+                new Vector2(0, 0), new Vector2(40, 0), new Vector2(40, 10), new Vector2(25, 10),
+                new Vector2(15, 25), new Vector2(0, 25)
+            }
+        };
+
+        [TestCaseSource(nameof(WellBehavedShapes))]
+        public void Region_WindowStaysInsideBoundsAndTouchesThem(Vector2[][] loops)
+        {
+            var region = RegionBaker.Bake(loops, Window);
+            Assert.IsFalse(region.IsEmpty);
+            var inset = new Vector2(Window.x - 0.01f, Window.y - 0.01f);
+            var outset = new Vector2(Window.x + 0.05f, Window.y + 0.05f);
+            foreach (var loop in region.Loops)
+                for (int i = 0, j = loop.Length - 1; i < loop.Length; j = i++)
+                    for (var k = 0; k <= 10; k++)
+                    {
+                        var c = Vector2.Lerp(loop[j], loop[i], k / 10f);
+                        // The window (slightly shrunk) fits inside the bounds at every point of the region...
+                        foreach (var p in WindowPerimeter(c, inset))
+                            Assert.IsTrue(InsideAny(loops, p), $"window at {c} leaves the bounds at {p}");
+                        // ...and, on the region's boundary, a slightly larger window does not: the region is not
+                        // smaller than the exact erosion
+                        var touches = false;
+                        foreach (var p in WindowPerimeter(c, outset))
+                            if (!InsideAny(loops, p))
+                                touches = true;
+                        Assert.IsTrue(touches, $"window at {c} on the region boundary does not touch the bounds");
+                    }
+        }
+
+        /// <summary>Points along the border of the window of the given half size (corners included).</summary>
+        private static IEnumerable<Vector2> WindowPerimeter(Vector2 center, Vector2 half)
+        {
+            const int perSide = 100;
+            for (var i = 0; i < perSide; i++)
+            {
+                var u = Mathf.Lerp(-1f, 1f, i / (float)perSide);
+                yield return center + Vector2.Scale(half, new Vector2(u, -1f));
+                yield return center + Vector2.Scale(half, new Vector2(1f, u));
+                yield return center + Vector2.Scale(half, new Vector2(-u, 1f));
+                yield return center + Vector2.Scale(half, new Vector2(-1f, -u));
+            }
+        }
+
+        /// <summary>Whether p is strictly inside any of the (possibly overlapping) loops.</summary>
+        private static bool InsideAny(Vector2[][] loops, Vector2 p)
+        {
+            foreach (var loop in loops)
+            {
+                var inside = false;
+                for (int i = 0, j = loop.Length - 1; i < loop.Length; j = i++)
+                    if ((loop[i].y > p.y) != (loop[j].y > p.y) &&
+                        p.x < (loop[j].x - loop[i].x) * (p.y - loop[i].y) / (loop[j].y - loop[i].y) + loop[i].x)
+                        inside = !inside;
+                if (inside) return true;
+            }
+
+            return false;
+        }
+
+        [Test]
         public void MapTarget_HandlesVanishingNotch()
         {
             // Rectangle with a small notch in the bottom wall (2 wide, 1 deep): the notch edges vanish under erosion
