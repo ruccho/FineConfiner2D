@@ -11,17 +11,25 @@ namespace FineConfiner2D
     ///     square), so that the wavefront at time 1 is exactly the region where the window fits.
     ///     <para>
     ///         A point t of P \ R lies on the wavefront of exactly one original edge e at some time λ &lt; 1.
-    ///         Its image is the point of the final wavefront edge e(1) at the same relative position s along the
-    ///         edge. Adjacent faces share their vertex trajectories, on which s is 0 on one side and 1 on the other
-    ///         and both map to the same point, so the map is continuous — unlike the nearest-point map, which jumps
-    ///         across the medial axis at concave corners. The displacement is a convex combination of the edge
-    ///         normal offset and the corner offsets, so its Chebyshev length is at most 1: the target stays inside
-    ///         the window (on its border when the target touches the bounds).
+    ///         Its image is on the final wavefront edge e(1): t is pushed straight onto the line of e(1) (keeping its
+    ///         position along the edge, as far as the window allows) and clamped to the edge. Adjacent faces share
+    ///         their vertex trajectories, which must map to the shared vertex of e(1) from both sides. At a convex
+    ///         corner the clamp already does this, so near walls and convex corners the camera follows the target
+    ///         along the wall and reaches the corner, as with an axis-wise clamp. At a reflex corner the push of the
+    ///         trajectory lands inside e(1); within a short distance of the corner that offset is blended out, so the
+    ///         map stays continuous there too — unlike the nearest-point map, which jumps across the medial axis at
+    ///         concave corners.
     ///     </para>
     /// </summary>
     internal sealed class WavefrontMap
     {
         private const float Eps = 1e-6f;
+
+        /// <summary>
+        ///     Distance along the wavefront (window space) over which the push of a target is bent toward a reflex
+        ///     corner's trajectory. Beyond it the target is pushed straight onto the final edge.
+        /// </summary>
+        private const float CornerBlendLength = 1f;
 
         private readonly List<Face> _faces = new();
         private IReadOnlyList<Vector2[]> _loops = Array.Empty<Vector2[]>();
@@ -79,20 +87,73 @@ namespace FineConfiner2D
                 if (!Geometry2D.ContainsPoint(f.PolygonAsList, t)) continue;
 
                 var lambda = Mathf.Clamp01(Vector2.Dot(t - f.EdgeA, f.Normal) / f.Speed);
+                var a1 = f.ChainA.PositionAt(1f);
+                var b1 = f.ChainB.PositionAt(1f);
+                var e1 = b1 - a1;
+                var len1 = e1.magnitude;
+                if (len1 <= Eps)
+                {
+                    // The edge has collapsed to a point by time 1
+                    result = a1;
+                    return true;
+                }
+
+                var dir = e1 / len1;
                 var a = f.ChainA.PositionAt(lambda);
                 var b = f.ChainB.PositionAt(lambda);
                 var ab = b - a;
-                var len2 = ab.sqrMagnitude;
-                var s = len2 > Eps * Eps ? Mathf.Clamp01(Vector2.Dot(t - a, ab) / len2) : 0f;
+                var abLen = ab.magnitude;
+                // Relative position along the wavefront edge at time λ: 0 on trajectory A, 1 on trajectory B
+                var sProp = abLen > Eps ? Mathf.Clamp01(Vector2.Dot(t - a, ab) / (abLen * abLen)) : 0f;
 
-                var a1 = f.ChainA.PositionAt(1f);
-                var b1 = f.ChainB.PositionAt(1f);
-                result = a1 + (b1 - a1) * s;
+                // Relative position of the push of t onto the final edge, and the same for the two trajectory
+                // points. A trajectory point pushes outside the final edge at a convex corner (the edge shrinks),
+                // where clamping alone joins the neighbouring face; at a reflex corner it pushes inside the edge,
+                // and that offset is removed near the corner so that the trajectory maps to the corner itself.
+                var sOrth = PushedPosition(t, a1, dir, len1);
+                var offsetA = Mathf.Max(0f, PushedPosition(a, a1, dir, len1));
+                var offsetB = Mathf.Min(0f, PushedPosition(b, a1, dir, len1) - 1f);
+                var weightA = Mathf.Min(1f - sProp, Mathf.Clamp01(1f - sProp * abLen / CornerBlendLength));
+                var weightB = Mathf.Min(sProp, Mathf.Clamp01(1f - (1f - sProp) * abLen / CornerBlendLength));
+                var s = Mathf.Clamp01(sOrth - weightA * offsetA - weightB * offsetB);
+
+                result = a1 + e1 * s;
                 return true;
             }
 
             result = t;
             return false;
+        }
+
+        /// <summary>
+        ///     Moves a point on the wavefront at time λ onto the line of the final edge (starting at a1, direction dir,
+        ///     length len1) and returns its relative position along the final edge (not clamped).
+        ///     <para>
+        ///         The point is moved to the final line point nearest to its perpendicular foot among those that keep
+        ///         it inside the window (Chebyshev distance ≤ 1). For axis-aligned edges that is the foot itself; for
+        ///         diagonal edges close to the bounds it slides toward the window corner that touches the bounds.
+        ///     </para>
+        /// </summary>
+        private static float PushedPosition(Vector2 p, Vector2 a1, Vector2 dir, float len1)
+        {
+            var foot = Vector2.Dot(p - a1, dir);
+            var min = float.NegativeInfinity;
+            var max = float.PositiveInfinity;
+            // Final line points a1 + dir * u with |x - p.x| ≤ 1 and |y - p.y| ≤ 1
+            Restrict(p.x - a1.x, dir.x, ref min, ref max);
+            Restrict(p.y - a1.y, dir.y, ref min, ref max);
+            var u = min <= max ? Mathf.Clamp(foot, min, max) : (min + max) * 0.5f;
+            return u / len1;
+        }
+
+        private static void Restrict(float offset, float direction, ref float min, ref float max)
+        {
+            if (Mathf.Abs(direction) <= Eps) return;
+            var u0 = (offset - 1f) / direction;
+            var u1 = (offset + 1f) / direction;
+            if (u0 > u1) (u0, u1) = (u1, u0);
+            min = Mathf.Max(min, u0);
+            max = Mathf.Min(max, u1);
         }
 
         #region Construction

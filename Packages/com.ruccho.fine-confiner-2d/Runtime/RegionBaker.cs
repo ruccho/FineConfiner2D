@@ -58,19 +58,20 @@ namespace FineConfiner2D
             cancellationToken.ThrowIfCancellationRequested();
 
             // --- 3. Erode by the window: centers where the window fits entirely.
-            // In window space the window is a square, so a miter offset of -1 is an exact erosion for
-            // axis-aligned edges and a close approximation for diagonal ones.
-            var eroded64 = Clipper.InflatePaths(p64, -IntScale, JoinType.Miter, EndType.Polygon);
+            // In window space the window is the square [-1,1]^2. The exact erosion is the bounds minus the area
+            // swept by the window along their boundary. (A Euclidean offset of -1 would only be exact for
+            // axis-aligned edges: a diagonal edge has to move by |n.x| + |n.y|, as the wavefront map assumes.)
+            var eroded64 = Clipper.Difference(p64, SweepWindowAlongBoundary(p64), FillRule.NonZero);
             var full = ToLoops(eroded64);
             RemoveDegenerateLoops(full);
             cancellationToken.ThrowIfCancellationRequested();
 
             // --- 4. Continuous target map (offset wavefront), in window space.
-            // Built on the morphological opening of the bounds (erode, then dilate back): features narrower than
-            // the window (notches, slits) are removed, which guarantees that the wavefront from the opening to the
-            // eroded region only has edge events. The eroded region itself is unchanged by the opening.
-            var opened = ToLoops(Clipper.Union(
-                Clipper.InflatePaths(eroded64, IntScale, JoinType.Miter, EndType.Polygon), FillRule.NonZero));
+            // Built on the morphological opening of the bounds (erode, then dilate back by the same square):
+            // features narrower than the window (notches, slits) are removed, which guarantees that the wavefront
+            // from the opening to the eroded region only has edge events. The eroded region itself is unchanged by
+            // the opening, so the wavefront ends exactly on it.
+            var opened = ToLoops(Clipper.Union(eroded64, SweepWindowAlongBoundary(eroded64), FillRule.NonZero));
             RemoveDegenerateLoops(opened);
             var map = WavefrontMap.Build(opened);
             cancellationToken.ThrowIfCancellationRequested();
@@ -82,6 +83,70 @@ namespace FineConfiner2D
             // --- 6. Islands + visibility graph ---
             return BuildGraph(worldSource, worldFull, halfWindow, map, cancellationToken);
         }
+
+        #region Window sweep
+
+        /// <summary>
+        ///     The area covered by the window (the square [-1,1]^2 in window space) while its center moves along every
+        ///     edge of the paths: the union of the convex hulls of the window at both ends of each edge.
+        /// </summary>
+        private static Paths64 SweepWindowAlongBoundary(Paths64 paths)
+        {
+            var hulls = new Paths64();
+            var corners = new Point64[8];
+            var s = (long)IntScale;
+            foreach (var path in paths)
+            {
+                var n = path.Count;
+                for (var i = 0; i < n; i++)
+                {
+                    var a = path[i];
+                    var b = path[(i + 1) % n];
+                    corners[0] = new Point64(a.X - s, a.Y - s);
+                    corners[1] = new Point64(a.X + s, a.Y - s);
+                    corners[2] = new Point64(a.X + s, a.Y + s);
+                    corners[3] = new Point64(a.X - s, a.Y + s);
+                    corners[4] = new Point64(b.X - s, b.Y - s);
+                    corners[5] = new Point64(b.X + s, b.Y - s);
+                    corners[6] = new Point64(b.X + s, b.Y + s);
+                    corners[7] = new Point64(b.X - s, b.Y + s);
+                    hulls.Add(ConvexHull(corners));
+                }
+            }
+
+            return Clipper.Union(hulls, FillRule.NonZero);
+        }
+
+        /// <summary>Convex hull (counter-clockwise) by the monotone chain algorithm.</summary>
+        private static Path64 ConvexHull(Point64[] points)
+        {
+            var sorted = (Point64[])points.Clone();
+            Array.Sort(sorted, (p, q) => p.X != q.X ? p.X.CompareTo(q.X) : p.Y.CompareTo(q.Y));
+            var hull = new Point64[sorted.Length * 2];
+            var k = 0;
+            for (var i = 0; i < sorted.Length; i++)
+            {
+                while (k >= 2 && Cross(hull[k - 2], hull[k - 1], sorted[i]) <= 0) k--;
+                hull[k++] = sorted[i];
+            }
+
+            for (int i = sorted.Length - 2, lower = k + 1; i >= 0; i--)
+            {
+                while (k >= lower && Cross(hull[k - 2], hull[k - 1], sorted[i]) <= 0) k--;
+                hull[k++] = sorted[i];
+            }
+
+            var result = new Path64();
+            for (var i = 0; i < k - 1; i++) result.Add(hull[i]);
+            return result;
+        }
+
+        private static double Cross(Point64 o, Point64 a, Point64 b)
+        {
+            return (double)(a.X - o.X) * (b.Y - o.Y) - (double)(a.Y - o.Y) * (b.X - o.X);
+        }
+
+        #endregion
 
         #region Clipper conversion
 
